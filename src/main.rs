@@ -1,18 +1,3 @@
-//! Implements a hello-world example for Arbitrum Stylus, providing a Solidity ABI-equivalent
-//! Rust implementation of the Counter contract example provided by Foundry.
-//! Warning: this code is a template only and has not been audited.
-//! ```
-//! contract Counter {
-//!     uint256 public number;
-//!     function setNumber(uint256 newNumber) public {
-//!         number = newNumber;
-//!     }
-//!     function increment() public {
-//!         number++;
-//!     }
-//! }
-//! ```
-
 // Only run this as a WASM if the export-abi feature is not set.
 #![cfg_attr(not(feature = "export-abi"), no_main)]
 extern crate alloc;
@@ -21,8 +6,22 @@ extern crate alloc;
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
+use crate::erc721::{Erc721, Erc721Params};
+use alloy_primitives::{Address, U256};
+use erc721::Erc721Error;
 /// Import the Stylus SDK along with alloy primitive types for use in our program.
-use stylus_sdk::{alloy_primitives::U256, prelude::*};
+use stylus_sdk::prelude::*;
+
+/// import module
+mod erc721;
+
+struct StylusNFTParams;
+
+/// Immutable definitions
+impl Erc721Params for StylusNFTParams {
+    const NAME: &'static str = "StylusNFT";
+    const SYMBOL: &'static str = "SNFT";
+}
 
 // Define the entrypoint as a Solidity storage object, in this case a struct
 // called `Counter` with a single uint256 value called `number`. The sol_storage! macro
@@ -30,30 +29,17 @@ use stylus_sdk::{alloy_primitives::U256, prelude::*};
 // storage slots and types.
 sol_storage! {
     #[entrypoint]
-    pub struct Counter {
-        uint256 number;
+    struct StylusNFT {
+        #[borrow] // Allows erc721 to access MyToken's storage and make calls
+        Erc721<StylusNFTParams> erc721;
     }
 }
 
-/// Define an implementation of the generated Counter struct, defining a set_number
-/// and increment method using the features of the Stylus SDK.
 #[external]
-impl Counter {
-    /// Gets the number from storage.
-    pub fn number(&self) -> Result<U256, Vec<u8>> {
-        Ok(self.number.get())
-    }
-
-    /// Sets a number in storage to a user-specified value.
-    pub fn set_number(&mut self, new_number: U256) -> Result<(), Vec<u8>> {
-        self.number.set(new_number);
-        Ok(())
-    }
-
-    /// Increments number and updates it values in storage.
-    pub fn increment(&mut self) -> Result<(), Vec<u8>> {
-        let number = self.number.get();
-        self.number.set(number + U256::from(1));
+#[inherit(Erc721<StylusNFTParams>)]
+impl StylusNFT {
+    pub fn mint_to(&mut self, to: Address, token_id: U256) -> Result<(), Erc721Error> {
+        self.erc721._mint(to, token_id)?;
         Ok(())
     }
 }
