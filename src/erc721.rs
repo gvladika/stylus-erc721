@@ -15,10 +15,12 @@ pub trait Erc721Params {
 
 sol_storage! {
     pub struct Erc721<T> {
-        /// NFT id to owner map
+        /// Token id to owner map
         mapping(uint256 => address) _owners;
         /// User to balance map
         mapping(address => uint256) _balances;
+        /// Token id to approved user map
+        mapping(uint256 => address) _approvals;
         /// Used to allow [`Erc721Params`]
         PhantomData<T> phantom;
     }
@@ -27,8 +29,9 @@ sol_storage! {
 // Declare events and Solidity error types
 sol! {
     event Transfer(address indexed from, address indexed to, uint256 indexed token_id);
+    event Approval(address indexed owner, address indexed spender, uint256 indexed token_id);
 
-    error NotOwner(address from, uint256 token_id);
+    error NotOwner(address account, uint256 token_id);
     error NotAuthorized(address caller);
     error InvalidRecipient(address to);
     error AlreadyMinted(uint256 token_id);
@@ -76,6 +79,36 @@ impl<T: Erc721Params> Erc721<T> {
         Ok(self._owners.get(token_id))
     }
 
+    pub fn get_approved(&self, token_id: U256) -> Result<Address, Erc721Error> {
+        Ok(self._approvals.get(token_id))
+    }
+
+    pub fn approve(&mut self, spender: Address, token_id: U256) -> Result<(), Erc721Error> {
+        // address owner = _ownerOf[id];
+        let owner = self._owners.getter(token_id).get();
+
+        // require(msg.sender == owner || isApprovedForAll[owner][msg.sender], "NOT_AUTHORIZED");
+        if msg::sender() != owner {
+            return Err(Erc721Error::NotOwner(NotOwner {
+                account: owner,
+                token_id,
+            }));
+        }
+
+        // getApproved[id] = spender;
+        let mut spender_of = self._approvals.setter(token_id);
+        spender_of.set(spender);
+
+        // emit Approval(owner, spender, id);
+        evm::log(Approval {
+            owner,
+            spender,
+            token_id,
+        });
+
+        Ok(())
+    }
+
     pub fn transfer_from(
         &mut self,
         from: Address,
@@ -85,7 +118,10 @@ impl<T: Erc721Params> Erc721<T> {
         // require(from == _ownerOf[id], "WRONG_FROM");
         let mut owner_of_id = self._owners.setter(token_id);
         if owner_of_id.get() != from {
-            return Err(Erc721Error::NotOwner(NotOwner { from, token_id }));
+            return Err(Erc721Error::NotOwner(NotOwner {
+                account: from,
+                token_id,
+            }));
         }
 
         // require(to != address(0), "INVALID_RECIPIENT");
@@ -94,7 +130,7 @@ impl<T: Erc721Params> Erc721<T> {
         }
 
         // require(msg.sender == from || isApprovedForAll[from][msg.sender] || msg.sender == getApproved[id], "NOT_AUTHORIZED");
-        if msg::sender() != from {
+        if msg::sender() != from && msg::sender() != self._approvals.get(token_id) {
             return Err(Erc721Error::NotAuthorized(NotAuthorized {
                 caller: msg::sender(),
             }));
@@ -112,6 +148,9 @@ impl<T: Erc721Params> Erc721<T> {
 
         // _ownerOf[id] = to;
         owner_of_id.set(to);
+
+        // delete getApproved[id];
+        self._approvals.setter(token_id).set(ADDRESS_ZERO);
 
         evm::log(Transfer { from, to, token_id });
 
@@ -167,6 +206,9 @@ impl<T: Erc721Params> Erc721<T> {
 
         // delete _ownerOf[id];
         owner.set(ADDRESS_ZERO);
+
+        // delete getApproved[id];
+        self._approvals.setter(token_id).set(ADDRESS_ZERO);
 
         // emit Transfer(owner, address(0), id);
         evm::log(Transfer {
