@@ -21,6 +21,8 @@ sol_storage! {
         mapping(address => uint256) _balances;
         /// Token id to approved user map
         mapping(uint256 => address) _approvals;
+        /// User to operator map (the operator can manage all NFTs of the owner.)
+        mapping(address => mapping(address => bool)) _approvals_for_all;
         /// Used to allow [`Erc721Params`]
         PhantomData<T> phantom;
     }
@@ -30,6 +32,7 @@ sol_storage! {
 sol! {
     event Transfer(address indexed from, address indexed to, uint256 indexed token_id);
     event Approval(address indexed owner, address indexed spender, uint256 indexed token_id);
+    event ApprovalForAll(address indexed owner, address indexed operator, bool approved);
 
     error NotOwner(address account, uint256 token_id);
     error NotAuthorized(address caller);
@@ -83,12 +86,20 @@ impl<T: Erc721Params> Erc721<T> {
         Ok(self._approvals.get(token_id))
     }
 
+    pub fn is_approved_for_all(
+        &self,
+        owner: Address,
+        operator: Address,
+    ) -> Result<bool, Erc721Error> {
+        Ok(self._approvals_for_all.get(owner).get(operator))
+    }
+
     pub fn approve(&mut self, spender: Address, token_id: U256) -> Result<(), Erc721Error> {
         // address owner = _ownerOf[id];
         let owner = self._owners.getter(token_id).get();
 
         // require(msg.sender == owner || isApprovedForAll[owner][msg.sender], "NOT_AUTHORIZED");
-        if msg::sender() != owner {
+        if msg::sender() != owner && !self._approvals_for_all.get(owner).get(msg::sender()) {
             return Err(Erc721Error::NotOwner(NotOwner {
                 account: owner,
                 token_id,
@@ -104,6 +115,26 @@ impl<T: Erc721Params> Erc721<T> {
             owner,
             spender,
             token_id,
+        });
+
+        Ok(())
+    }
+
+    pub fn set_approval_for_all(
+        &mut self,
+        operator: Address,
+        approved: bool,
+    ) -> Result<(), Erc721Error> {
+        // isApprovedForAll[msg.sender][operator] = approved;
+        let mut operator_setter = self._approvals_for_all.setter(msg::sender());
+        let mut approval_setter = operator_setter.setter(operator);
+        approval_setter.set(approved);
+
+        // emit ApprovalForAll(msg.sender, operator, approved);
+        evm::log(ApprovalForAll {
+            owner: msg::sender(),
+            operator,
+            approved,
         });
 
         Ok(())
@@ -130,7 +161,10 @@ impl<T: Erc721Params> Erc721<T> {
         }
 
         // require(msg.sender == from || isApprovedForAll[from][msg.sender] || msg.sender == getApproved[id], "NOT_AUTHORIZED");
-        if msg::sender() != from && msg::sender() != self._approvals.get(token_id) {
+        if msg::sender() != from
+            && self._approvals_for_all.get(from).get(msg::sender())
+            && msg::sender() != self._approvals.get(token_id)
+        {
             return Err(Erc721Error::NotAuthorized(NotAuthorized {
                 caller: msg::sender(),
             }));
