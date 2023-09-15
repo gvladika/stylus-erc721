@@ -32,6 +32,7 @@ sol! {
     error NotAuthorized(address caller);
     error InvalidRecipient(address to);
     error AlreadyMinted(uint256 token_id);
+    error NotMinted(uint256 token_id);
 }
 
 pub enum Erc721Error {
@@ -39,6 +40,7 @@ pub enum Erc721Error {
     NotAuthorized(NotAuthorized),
     InvalidRecipient(InvalidRecipient),
     AlreadyMinted(AlreadyMinted),
+    NotMinted(NotMinted),
 }
 
 impl From<Erc721Error> for Vec<u8> {
@@ -48,9 +50,12 @@ impl From<Erc721Error> for Vec<u8> {
             Erc721Error::NotAuthorized(e) => e.encode(),
             Erc721Error::InvalidRecipient(e) => e.encode(),
             Erc721Error::AlreadyMinted(e) => e.encode(),
+            Erc721Error::NotMinted(e) => e.encode(),
         }
     }
 }
+
+const ADDRESS_ZERO: Address = Address(FixedBytes([0u8; 20]));
 
 // These methods are external to other contracts
 #[external]
@@ -84,8 +89,7 @@ impl<T: Erc721Params> Erc721<T> {
         }
 
         // require(to != address(0), "INVALID_RECIPIENT");
-        let address_zero: Address = Address(FixedBytes([0u8; 20]));
-        if to == address_zero {
+        if to == ADDRESS_ZERO {
             return Err(Erc721Error::InvalidRecipient(InvalidRecipient { to }));
         }
 
@@ -115,19 +119,17 @@ impl<T: Erc721Params> Erc721<T> {
     }
 }
 
-// internal methods
+// internal mint+burn methods
 impl<T: Erc721Params> Erc721<T> {
     pub fn _mint(&mut self, to: Address, token_id: U256) -> Result<(), Erc721Error> {
-        let address_zero: Address = Address(FixedBytes([0u8; 20]));
-
         // require(to != address(0), "INVALID_RECIPIENT");
-        if to == address_zero {
+        if to == ADDRESS_ZERO {
             return Err(Erc721Error::InvalidRecipient(InvalidRecipient { to }));
         }
 
         // require(_ownerOf[id] == address(0), "ALREADY_MINTED");
         let mut owner_of_id = self._owners.setter(token_id);
-        if owner_of_id.get() != address_zero {
+        if owner_of_id.get() != ADDRESS_ZERO {
             return Err(Erc721Error::AlreadyMinted(AlreadyMinted { token_id }));
         }
 
@@ -141,8 +143,35 @@ impl<T: Erc721Params> Erc721<T> {
 
         // emit Transfer(address(0), to, id);
         evm::log(Transfer {
-            from: address_zero,
+            from: ADDRESS_ZERO,
             to,
+            token_id,
+        });
+
+        Ok(())
+    }
+
+    pub fn _burn(&mut self, token_id: U256) -> Result<(), Erc721Error> {
+        // address owner = _ownerOf[id];
+        let mut owner = self._owners.setter(token_id);
+
+        // require(owner != address(0), "NOT_MINTED");
+        if owner.get() == ADDRESS_ZERO {
+            return Err(Erc721Error::NotMinted(NotMinted { token_id }));
+        }
+
+        // _balanceOf[owner]--;
+        let mut owner_balance = self._balances.setter(owner.get());
+        let new_owner_balance = owner_balance.get() - U256::from(1);
+        owner_balance.set(new_owner_balance);
+
+        // delete _ownerOf[id];
+        owner.set(ADDRESS_ZERO);
+
+        // emit Transfer(owner, address(0), id);
+        evm::log(Transfer {
+            from: owner.get(),
+            to: ADDRESS_ZERO,
             token_id,
         });
 

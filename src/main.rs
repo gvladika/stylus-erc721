@@ -38,8 +38,13 @@ sol_storage! {
 #[external]
 #[inherit(Erc721<StylusNFTParams>)]
 impl StylusNFT {
-    pub fn mint_to(&mut self, to: Address, token_id: U256) -> Result<(), Erc721Error> {
+    pub fn mint(&mut self, to: Address, token_id: U256) -> Result<(), Erc721Error> {
         self.erc721._mint(to, token_id)?;
+        Ok(())
+    }
+
+    pub fn burn(&mut self, token_id: U256) -> Result<(), Erc721Error> {
+        self.erc721._burn(token_id)?;
         Ok(())
     }
 }
