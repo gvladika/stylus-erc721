@@ -39,6 +39,10 @@ sol_storage! {
 #[external]
 #[inherit(Erc721<StylusNFTParams>)]
 impl StylusNFT {
+    fn token_uri(token_id: U256) -> Result<String, Erc721Error> {
+        Ok(format!("{}{}", "https://foobar/", token_id))
+    }
+
     pub fn mint(&mut self, to: Address) -> Result<(), Erc721Error> {
         let token_id = self.counter.get();
         self.erc721._mint(to, token_id)?;
