@@ -1,5 +1,5 @@
 // Only run this as a WASM if the export-abi feature is not set.
-#![cfg_attr(not(feature = "export-abi"), no_main)]
+#![cfg_attr(not(any(feature = "export-abi", test)), no_main)]
 extern crate alloc;
 
 /// Initializes a custom, global allocator for Rust programs compiled to WASM.
@@ -10,7 +10,7 @@ use crate::erc721::{Erc721, Erc721Params};
 use alloy_primitives::{Address, U256};
 use erc721::{Erc721Error, NotAuthorized};
 /// Import the Stylus SDK along with alloy primitive types for use in our program.
-use stylus_sdk::{msg, prelude::*};
+use stylus_sdk::{call::Call, msg, prelude::*};
 
 /// import modules
 mod erc721;

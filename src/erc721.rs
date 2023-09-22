@@ -4,6 +4,7 @@ use core::marker::PhantomData;
 use stylus_sdk::{
     alloy_primitives::{Address, U256},
     alloy_sol_types::{sol, SolError},
+    call::Call,
     evm, msg,
     prelude::*,
 };
@@ -39,6 +40,14 @@ sol! {
     error InvalidRecipient(address to);
     error AlreadyMinted(uint256 token_id);
     error NotMinted(uint256 token_id);
+    error UnsafeRecipient(address recipient);
+    error CallFailed();
+}
+
+sol_interface! {
+    interface IERC721TokenReceiver {
+        function onERC721Received(address operator, address from, uint256 token_id, bytes data) external returns(bytes4);
+    }
 }
 
 pub enum Erc721Error {
@@ -47,6 +56,8 @@ pub enum Erc721Error {
     InvalidRecipient(InvalidRecipient),
     AlreadyMinted(AlreadyMinted),
     NotMinted(NotMinted),
+    UnsafeRecipient(UnsafeRecipient),
+    CallFailed(CallFailed),
 }
 
 impl From<Erc721Error> for Vec<u8> {
@@ -57,11 +68,14 @@ impl From<Erc721Error> for Vec<u8> {
             Erc721Error::InvalidRecipient(e) => e.encode(),
             Erc721Error::AlreadyMinted(e) => e.encode(),
             Erc721Error::NotMinted(e) => e.encode(),
+            Erc721Error::UnsafeRecipient(e) => e.encode(),
+            Erc721Error::CallFailed(e) => e.encode(),
         }
     }
 }
 
 const ADDRESS_ZERO: Address = Address(FixedBytes([0u8; 20]));
+const ERC721_TOKEN_RECEIVER_ID: u32 = 0x150b7a02;
 
 // These methods are external to other contracts
 #[external]
@@ -187,6 +201,31 @@ impl<T: Erc721Params> Erc721<T> {
         self._approvals.setter(token_id).set(ADDRESS_ZERO);
 
         evm::log(Transfer { from, to, token_id });
+
+        Ok(())
+    }
+
+    pub fn safe_transfer_from(
+        &mut self,
+        from: Address,
+        to: Address,
+        token_id: U256,
+    ) -> Result<(), Erc721Error> {
+        // transferFrom(from, to, id);
+        self.transfer_from(from, to, token_id)?;
+
+        let receiver = IERC721TokenReceiver::new(to);
+        let config = Call::new();
+        let hook_result = receiver
+            .on_erc_721_received(config, msg::sender(), from, token_id, vec![])
+            .map_err(|_e| Erc721Error::CallFailed(CallFailed {}))?;
+
+        // require(to.code.length == 0 || ERC721TokenReceiver(to).onERC721Received(msg.sender, from, id, "") == ERC721TokenReceiver.onERC721Received.selector, "UNSAFE_RECIPIENT");
+        if to.has_code() && u32::from_be_bytes(hook_result.0) != ERC721_TOKEN_RECEIVER_ID {
+            return Err(Erc721Error::UnsafeRecipient(UnsafeRecipient {
+                recipient: to,
+            }));
+        }
 
         Ok(())
     }
