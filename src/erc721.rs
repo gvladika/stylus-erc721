@@ -214,18 +214,7 @@ impl<T: Erc721Params> Erc721<T> {
         // transferFrom(from, to, id);
         self.transfer_from(from, to, token_id)?;
 
-        let receiver = IERC721TokenReceiver::new(to);
-        let config = Call::new();
-        let hook_result = receiver
-            .on_erc_721_received(config, msg::sender(), from, token_id, vec![])
-            .map_err(|_e| Erc721Error::CallFailed(CallFailed {}))?;
-
-        // require(to.code.length == 0 || ERC721TokenReceiver(to).onERC721Received(msg.sender, from, id, "") == ERC721TokenReceiver.onERC721Received.selector, "UNSAFE_RECIPIENT");
-        if to.has_code() && u32::from_be_bytes(hook_result.0) != ERC721_TOKEN_RECEIVER_ID {
-            return Err(Erc721Error::UnsafeRecipient(UnsafeRecipient {
-                recipient: to,
-            }));
-        }
+        self._check_recipient_is_valid(from, to, token_id)?;
 
         Ok(())
     }
@@ -289,6 +278,37 @@ impl<T: Erc721Params> Erc721<T> {
             to: ADDRESS_ZERO,
             token_id,
         });
+
+        Ok(())
+    }
+
+    pub fn _safe_mint(&mut self, to: Address, token_id: U256) -> Result<(), Erc721Error> {
+        // _mint(to, id);
+        self._mint(to, token_id)?;
+
+        self._check_recipient_is_valid(ADDRESS_ZERO, to, token_id)?;
+
+        Ok(())
+    }
+
+    pub fn _check_recipient_is_valid(
+        &mut self,
+        from: Address,
+        to: Address,
+        token_id: U256,
+    ) -> Result<(), Erc721Error> {
+        let receiver = IERC721TokenReceiver::new(to);
+        let config = Call::new();
+        let hook_result = receiver
+            .on_erc_721_received(config, msg::sender(), from, token_id, vec![])
+            .map_err(|_e| Erc721Error::CallFailed(CallFailed {}))?;
+
+        // require(to.code.length == 0 || ERC721TokenReceiver(to).onERC721Received(msg.sender, from, id, "") == ERC721TokenReceiver.onERC721Received.selector, "UNSAFE_RECIPIENT");
+        if to.has_code() && u32::from_be_bytes(hook_result.0) != ERC721_TOKEN_RECEIVER_ID {
+            return Err(Erc721Error::UnsafeRecipient(UnsafeRecipient {
+                recipient: to,
+            }));
+        }
 
         Ok(())
     }

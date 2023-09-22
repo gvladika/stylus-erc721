@@ -10,7 +10,7 @@ use crate::erc721::{Erc721, Erc721Params};
 use alloy_primitives::{Address, U256};
 use erc721::{Erc721Error, NotAuthorized};
 /// Import the Stylus SDK along with alloy primitive types for use in our program.
-use stylus_sdk::{call::Call, msg, prelude::*};
+use stylus_sdk::{msg, prelude::*};
 
 /// import modules
 mod erc721;
