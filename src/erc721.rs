@@ -219,7 +219,6 @@ impl<T: Erc721Params> Erc721<T> {
         Ok(())
     }
 
-    ///// supports interface
     pub fn supports_interface(interface: [u8; 4]) -> Result<bool, Vec<u8>> {
         let supported = interface == 0x01ffc9a7u32.to_be_bytes() // ERC165 Interface ID for ERC165
             || interface == 0x80ac58cdu32.to_be_bytes() // ERC165 Interface ID for ERC721
@@ -305,17 +304,19 @@ impl<T: Erc721Params> Erc721<T> {
         to: Address,
         token_id: U256,
     ) -> Result<(), Erc721Error> {
-        let receiver = IERC721TokenReceiver::new(to);
-        let config = Call::new();
-        let hook_result = receiver
-            .on_erc_721_received(config, msg::sender(), from, token_id, vec![])
-            .map_err(|_e| Erc721Error::CallFailed(CallFailed {}))?;
-
         // require(to.code.length == 0 || ERC721TokenReceiver(to).onERC721Received(msg.sender, from, id, "") == ERC721TokenReceiver.onERC721Received.selector, "UNSAFE_RECIPIENT");
-        if to.has_code() && u32::from_be_bytes(hook_result.0) != ERC721_TOKEN_RECEIVER_ID {
-            return Err(Erc721Error::UnsafeRecipient(UnsafeRecipient {
-                recipient: to,
-            }));
+        if to.has_code() {
+            let receiver = IERC721TokenReceiver::new(to);
+            let config = Call::new();
+            let hook_result = receiver
+                .on_erc_721_received(config, msg::sender(), from, token_id, vec![])
+                .map_err(|_e| Erc721Error::CallFailed(CallFailed {}))?;
+
+            if u32::from_be_bytes(hook_result.0) != ERC721_TOKEN_RECEIVER_ID {
+                return Err(Erc721Error::UnsafeRecipient(UnsafeRecipient {
+                    recipient: to,
+                }));
+            }
         }
 
         Ok(())
