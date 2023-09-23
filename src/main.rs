@@ -52,6 +52,15 @@ impl StylusNFT {
         Ok(())
     }
 
+    pub fn safe_mint(&mut self, to: Address) -> Result<(), Erc721Error> {
+        let token_id = self.counter.get();
+        self.erc721._safe_mint(to, token_id)?;
+
+        let new_value = token_id + U256::from(1);
+        self.counter.set(new_value);
+        Ok(())
+    }
+
     pub fn burn(&mut self, token_id: U256) -> Result<(), Erc721Error> {
         let owner = self.erc721._owners.get(token_id);
         if msg::sender() != owner {
