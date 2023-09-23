@@ -218,6 +218,14 @@ impl<T: Erc721Params> Erc721<T> {
 
         Ok(())
     }
+
+    ///// supports interface
+    pub fn supports_interface(interface: [u8; 4]) -> Result<bool, Vec<u8>> {
+        let supported = interface == 0x01ffc9a7u32.to_be_bytes() // ERC165 Interface ID for ERC165
+            || interface == 0x80ac58cdu32.to_be_bytes() // ERC165 Interface ID for ERC721
+            || interface == 0x780e9d63u32.to_be_bytes(); // ERC165 Interface ID for ERC721Metadata
+        Ok(supported)
+    }
 }
 
 // internal mint+burn methods
